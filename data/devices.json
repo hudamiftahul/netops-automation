@@ -1,0 +1,10 @@
+
+{
+  "devices": [
+    {
+      "name": "Local Test",
+      "ip": "127.0.0.1",
+      "type": "test"
+    }
+  ]
+}
