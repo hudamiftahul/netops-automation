@@ -4,7 +4,21 @@
     {
       "name": "Local Test",
       "ip": "127.0.0.1",
-      "type": "test"
+      "type": "test",
+      "location": "location"
+    },
+    {
+      "name": "Router Huda",
+      "ip": "192.168.16.1",
+      "type": "Router",
+      "location": "ET40"
+    },
+    {
+      "name": "Router ET40",
+      "ip": "192.170.170.1",
+      "type": "Router",
+      "location": "ET40"
     }
+    
   ]
 }
