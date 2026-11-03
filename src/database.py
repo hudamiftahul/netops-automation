@@ -49,3 +49,66 @@ def get_recent_history(limit=10):
             ORDER BY id DESC
             LIMIT ?
         """, (limit,)).fetchall()
+
+
+
+def initialize_snmp_table():
+    """Membuat tabel khusus hasil monitoring SNMP."""
+    with get_connection() as connection:
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS snmp_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                checked_at TEXT NOT NULL,
+                device_name TEXT NOT NULL,
+                ip_address TEXT NOT NULL,
+                sys_name TEXT,
+                uptime_ticks INTEGER,
+                cpu_usage REAL,
+                memory_total INTEGER,
+                memory_free INTEGER,
+                memory_used INTEGER,
+                memory_usage_percent REAL
+            )
+        """)
+
+
+def save_snmp_metrics(
+    checked_at,
+    device_name,
+    ip_address,
+    sys_name,
+    uptime_ticks,
+    cpu_usage,
+    memory_total,
+    memory_free,
+    memory_used,
+    memory_usage_percent
+):
+    """Menyimpan hasil pengambilan metrik SNMP."""
+    with get_connection() as connection:
+        connection.execute("""
+            INSERT INTO snmp_history (
+                checked_at,
+                device_name,
+                ip_address,
+                sys_name,
+                uptime_ticks,
+                cpu_usage,
+                memory_total,
+                memory_free,
+                memory_used,
+                memory_usage_percent
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            checked_at,
+            device_name,
+            ip_address,
+            sys_name,
+            uptime_ticks,
+            cpu_usage,
+            memory_total,
+            memory_free,
+            memory_used,
+            memory_usage_percent
+        ))
