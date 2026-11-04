@@ -105,6 +105,72 @@
       "ip": "192.10.1.14",
       "type": "Router",
       "location": "ET40"
+    },
+    {
+      "name": "Router Site 15",
+      "ip": "192.10.1.15",
+      "type": "Router",
+      "location": "ET40"
+    },
+    {
+      "name": "Router Site 16",
+      "ip": "192.10.1.16",
+      "type": "Router",
+      "location": "ET40"
+    },
+    {
+      "name": "Router Site 17",
+      "ip": "192.10.1.17",
+      "type": "Router",
+      "location": "ET40"
+    },
+    {
+      "name": "Router Site 18",
+      "ip": "192.10.1.18",
+      "type": "Router",
+      "location": "ET40"
+    },
+    {
+      "name": "Router Site 19",
+      "ip": "192.10.1.19",
+      "type": "Router",
+      "location": "ET40"
+    },
+    {
+      "name": "Router Site 20",
+      "ip": "192.10.1.20",
+      "type": "Router",
+      "location": "ET40"
+    },
+    {
+      "name": "Router Site 21",
+      "ip": "192.10.1.21",
+      "type": "Router",
+      "location": "ET40"
+    },
+    {
+      "name": "Router Site 22",
+      "ip": "192.10.1.22",
+      "type": "Router",
+      "location": "ET40"
+    },
+    {
+      "name": "Router Site 23",
+      "ip": "192.10.1.23",
+      "type": "Router",
+      "location": "ET40"
+    },
+    {
+      "name": "Router Site 24",
+      "ip": "192.10.1.24",
+      "type": "Router",
+      "location": "ET40"
+    },
+    {
+      "name": "Router Site 25",
+      "ip": "192.10.1.25",
+      "type": "Router",
+      "location": "ET40"
     }
   ]
 }

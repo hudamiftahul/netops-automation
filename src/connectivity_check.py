@@ -10,19 +10,23 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 INVENTORY_FILE = PROJECT_DIR / "data" / "devices.json"
 
 
+
+
 def check_connectivity(ip):
-    """Memeriksa apakah alamat IP merespons ping."""
+    """Memeriksa konektivitas tanpa membuka jendela terminal."""
     try:
         result = subprocess.run(
             ["ping", "-n", "1", "-w", "1000", ip],
             capture_output=True,
             text=True,
-            timeout=3
+            timeout=3,
+            creationflags=subprocess.CREATE_NO_WINDOW
         )
         return result.returncode == 0
 
     except subprocess.TimeoutExpired:
         return False
+
 
 
 def main():
