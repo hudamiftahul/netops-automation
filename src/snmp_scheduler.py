@@ -6,6 +6,7 @@ import keyring
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from pysnmp.hlapi.v3arch.asyncio import (
     UsmUserData,
@@ -32,6 +33,7 @@ INVENTORY_FILE = DATA_DIR / "devices.json"
 LOG_FILE = DATA_DIR / "snmp_scheduler.log"
 
 INTERVAL_SECONDS = 300
+MAX_PING_WORKERS = 10
 SERVICE_NAME = "NetOpsAutomation"
 
 
@@ -69,7 +71,7 @@ def load_inventory_devices():
 
 
 def run_ping_monitoring():
-    """Ping seluruh perangkat dan menyimpan hasilnya ke SQLite."""
+    """Ping seluruh perangkat secara concurrent dan simpan hasilnya ke SQLite."""
     devices = load_inventory_devices()
 
     checked_at = get_current_time()
@@ -78,41 +80,55 @@ def run_ping_monitoring():
     offline_count = 0
     failed_checks = 0
 
-    logger.info("Starting connectivity monitoring.")
+    logger.info("Starting concurrent connectivity monitoring.")
     logger.info("Total ping devices: %s", len(devices))
+    logger.info("Maximum concurrent workers: %s", MAX_PING_WORKERS)
 
-    for device in devices:
-        name = device.get("name", "Unknown")
-        ip = device.get("ip", "Unknown")
+    with ThreadPoolExecutor(max_workers=MAX_PING_WORKERS) as executor:
 
-        try:
-            is_online = check_connectivity(ip)
-            status = "ONLINE" if is_online else "OFFLINE"
+        future_to_device = {
+            executor.submit(
+                check_connectivity,
+                device.get("ip", "Unknown")
+            ): device
+            for device in devices
+        }
 
-            save_result(checked_at, name, ip, status)
+        for future in as_completed(future_to_device):
 
-            if is_online:
-                online_count += 1
-                logger.info(
-                    "PING ONLINE | Device: %s | IP: %s",
+            device = future_to_device[future]
+
+            name = device.get("name", "Unknown")
+            ip = device.get("ip", "Unknown")
+
+            try:
+                is_online = future.result()
+                status = "ONLINE" if is_online else "OFFLINE"
+
+                save_result(checked_at, name, ip, status)
+
+                if is_online:
+                    online_count += 1
+                    logger.info(
+                        "PING ONLINE | Device: %s | IP: %s",
+                        name,
+                        ip,
+                    )
+                else:
+                    offline_count += 1
+                    logger.warning(
+                        "PING OFFLINE | Device: %s | IP: %s",
+                        name,
+                        ip,
+                    )
+
+            except Exception:
+                failed_checks += 1
+                logger.exception(
+                    "PING CHECK ERROR | Device: %s | IP: %s",
                     name,
                     ip,
                 )
-            else:
-                offline_count += 1
-                logger.warning(
-                    "PING OFFLINE | Device: %s | IP: %s",
-                    name,
-                    ip,
-                )
-
-        except Exception:
-            failed_checks += 1
-            logger.exception(
-                "PING CHECK ERROR | Device: %s | IP: %s",
-                name,
-                ip,
-            )
 
     logger.info(
         "Ping completed | Total: %s | Online: %s | Offline: %s | Errors: %s",
