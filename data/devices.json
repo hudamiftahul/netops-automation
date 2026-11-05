@@ -1,12 +1,7 @@
 
 {
   "devices": [
-    {
-      "name": "Local Test",
-      "ip": "127.0.0.1",
-      "type": "test",
-      "location": "location"
-    },
+    
     {
       "name": "Router Huda",
       "ip": "192.168.16.1",

@@ -22,7 +22,9 @@ from database import (
     update_scheduler_health,
 )
 
-from connectivity_check import check_connectivity
+#from connectivity_check import check_connectivity
+
+from connectivity_check import measure_connectivity
 from snmp_collector import load_devices, collect_device
 
 
@@ -70,8 +72,9 @@ def load_inventory_devices():
     return inventory.get("devices", [])
 
 
+
 def run_ping_monitoring():
-    """Ping seluruh perangkat secara concurrent dan simpan hasilnya ke SQLite."""
+    """Mengukur konektivitas, latency, dan packet loss secara concurrent."""
     devices = load_inventory_devices()
 
     checked_at = get_current_time()
@@ -88,7 +91,7 @@ def run_ping_monitoring():
 
         future_to_device = {
             executor.submit(
-                check_connectivity,
+                measure_connectivity,
                 device.get("ip", "Unknown")
             ): device
             for device in devices
@@ -102,28 +105,46 @@ def run_ping_monitoring():
             ip = device.get("ip", "Unknown")
 
             try:
-                is_online = future.result()
-                status = "ONLINE" if is_online else "OFFLINE"
+                result = future.result()
 
-                save_result(checked_at, name, ip, status)
+                status = result["status"]
+                latency_ms = result["latency_ms"]
+                packet_loss = result["packet_loss"]
 
-                if is_online:
+                save_result(
+                    checked_at,
+                    name,
+                    ip,
+                    status,
+                    latency_ms,
+                    packet_loss
+                )
+
+                if status == "ONLINE":
                     online_count += 1
                     logger.info(
-                        "PING ONLINE | Device: %s | IP: %s",
+                        "PING ONLINE | Device: %s | IP: %s | "
+                        "Latency: %s ms | Packet Loss: %s%%",
                         name,
                         ip,
+                        latency_ms,
+                        packet_loss,
                     )
+
                 else:
                     offline_count += 1
                     logger.warning(
-                        "PING OFFLINE | Device: %s | IP: %s",
+                        "PING OFFLINE | Device: %s | IP: %s | "
+                        "Latency: %s | Packet Loss: %s%%",
                         name,
                         ip,
+                        latency_ms,
+                        packet_loss,
                     )
 
             except Exception:
                 failed_checks += 1
+
                 logger.exception(
                     "PING CHECK ERROR | Device: %s | IP: %s",
                     name,
@@ -131,7 +152,8 @@ def run_ping_monitoring():
                 )
 
     logger.info(
-        "Ping completed | Total: %s | Online: %s | Offline: %s | Errors: %s",
+        "Ping completed | Total: %s | Online: %s | "
+        "Offline: %s | Errors: %s",
         len(devices),
         online_count,
         offline_count,
@@ -139,6 +161,7 @@ def run_ping_monitoring():
     )
 
     return failed_checks
+
 
 
 async def run_scheduler(auth_data):

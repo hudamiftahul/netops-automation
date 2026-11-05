@@ -3,6 +3,7 @@ import json
 import sqlite3
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 from pathlib import Path
 
 # ==========================================
@@ -15,7 +16,7 @@ INVENTORY_FILE = PROJECT_DIR / "data" / "devices.json"
 
 st.set_page_config(
     page_title="NetOps Automation Platform",
-    page_icon="🖧",
+    page_icon="",
     layout="wide"
 )
 
@@ -37,14 +38,16 @@ def load_history():
                 "checked_at",
                 "device_name",
                 "ip_address",
-                "status"
+                "status",
+                "latency_ms",
+                "packet_loss"
             ]
         )
 
     with sqlite3.connect(DATABASE_FILE) as connection:
         return pd.read_sql_query(
             """
-            SELECT checked_at, device_name, ip_address, status
+            SELECT checked_at, device_name, ip_address, status, latency_ms, packet_loss
             FROM monitoring_history
             ORDER BY id DESC
             """,
@@ -146,13 +149,13 @@ def format_mib(value):
 # HEADER
 # ==========================================
 
-st.title("🖧 NetOps Automation Platform")
+st.title("NetOps Automation Platform")
 st.caption("Network Operations & Monitoring Dashboard")
 
 col_refresh, col_time = st.columns([1, 4])
 
 with col_refresh:
-    if st.button("🔄 Refresh Dashboard", use_container_width=True):
+    if st.button("Refresh Dashboard", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
@@ -174,7 +177,7 @@ inventory = load_inventory()
 # CONNECTIVITY MONITORING
 # ==========================================
 
-st.header("🌐 Connectivity Monitoring")
+st.header("Connectivity Monitoring")
 
 if history.empty:
     st.warning("No connectivity monitoring data available.")
@@ -243,18 +246,12 @@ else:
         f"{online_percentage:.1f}%"
     )
 
-    st.caption(
-        "Last monitoring recorded: "
-        f"{last_check.strftime('%d %b %Y, %H:%M:%S %Z')}"
-    )
-
-    st.divider()
 
     # ======================================
     # CURRENT DEVICE STATUS
     # ======================================
 
-    st.subheader("🖥️ Current Device Status")
+    st.subheader("Current Device Status")
 
     def highlight_status(value):
         if value == "ONLINE":
@@ -272,9 +269,26 @@ else:
             "device_type",
             "location",
             "status",
+            "latency_ms",
+            "packet_loss",
             "checked_at"
         ]
     ].copy()
+
+    device_table = device_table.rename(
+        columns={
+            "latency_ms": "Latency (ms)",
+            "packet_loss": "Packet Loss (%)"
+        }
+    )
+
+    device_table["Latency (ms)"] = (
+        device_table["Latency (ms)"].round(2)
+    )
+
+    device_table["Packet Loss (%)"] = (
+        device_table["Packet Loss (%)"].round(2)
+    )
 
     device_table["checked_at"] = (
         device_table["checked_at"]
@@ -283,8 +297,8 @@ else:
 
     st.dataframe(
         device_table.style.map(
-            highlight_status,
-            subset=["status"]
+        highlight_status,
+        subset=["status"]
         ),
         use_container_width=True,
         hide_index=True
@@ -294,43 +308,211 @@ else:
     # MONITORING TREND
     # ======================================
 
-    st.divider()
-    st.subheader("📊 Monitoring Trend")
 
-    trend = (
-        history.groupby(["checked_at", "status"])
-        .size()
-        .unstack(fill_value=0)
+    # ======================================
+    # NETWORK PERFORMANCE PER DEVICE
+    # ======================================
+
+    st.divider()
+    st.subheader("Network Performance per Device")
+
+    device_options = (
+        latest[["device_name", "ip_address"]]
+        .drop_duplicates()
+        .sort_values(["device_name", "ip_address"])
+    )
+    device_choices = list(
+        device_options.itertuples(index=False, name=None)
     )
 
-    for status in ["ONLINE", "OFFLINE"]:
-        if status not in trend.columns:
-            trend[status] = 0
-
-    trend = trend[
-        ["ONLINE", "OFFLINE"]
-    ].sort_index()
-
-    if len(trend) > 1:
-        st.line_chart(
-            trend,
-            y=["ONLINE", "OFFLINE"],
-            x_label="Monitoring Time",
-            y_label="Number of Devices",
-            use_container_width=True
+    if device_choices:
+        selected_performance_device = st.selectbox(
+            "Pilih perangkat",
+            device_choices,
+            format_func=lambda item: f"{item[0]} ({item[1]})",
+            key="performance_device"
         )
-    else:
-        st.info(
-            "Grafik tren membutuhkan lebih dari satu "
-            "waktu pemeriksaan."
+
+        selected_period = st.selectbox(
+            "Rentang waktu analisis",
+            ["Semua", "1 Jam", "24 Jam", "7 Hari", "30 Hari"],
+            index=0,
+            key="performance_period"
         )
+
+        device_performance = history[
+            (history["device_name"] == selected_performance_device[0])
+            & (history["ip_address"] == selected_performance_device[1])
+        ].copy()
+
+        period_deltas = {
+            "1 Jam": pd.Timedelta(hours=1),
+            "24 Jam": pd.Timedelta(hours=24),
+            "7 Hari": pd.Timedelta(days=7),
+            "30 Hari": pd.Timedelta(days=30)
+        }
+
+        if selected_period != "Semua":
+            cutoff_time = (
+                pd.Timestamp.now(tz="Asia/Jakarta")
+                - period_deltas[selected_period]
+            )
+            device_performance = device_performance[
+                device_performance["checked_at"] >= cutoff_time
+            ].copy()
+
+        device_performance = device_performance.sort_values("checked_at")
+
+        selected_latest_rows = latest[
+            (latest["device_name"] == selected_performance_device[0])
+            & (latest["ip_address"] == selected_performance_device[1])
+        ]
+
+        if not selected_latest_rows.empty:
+            selected_latest_row = selected_latest_rows.iloc[0]
+            avg_latency = device_performance["latency_ms"].mean()
+            avg_packet_loss = device_performance["packet_loss"].mean()
+
+            def format_metric(value, unit):
+                if pd.isna(value):
+                    return "N/A"
+                return f"{value:.2f} {unit}"
+
+            st.caption(
+                f"Perangkat: {selected_performance_device[0]} | "
+                f"IP: {selected_performance_device[1]} | "
+                f"Periode: {selected_period}"
+            )
+
+            metric_cols = st.columns(5)
+            metric_cols[0].metric(
+                "Current Status",
+                selected_latest_row["status"]
+            )
+            metric_cols[1].metric(
+                "Current Latency",
+                format_metric(selected_latest_row["latency_ms"], "ms")
+            )
+            metric_cols[2].metric(
+                "Current Packet Loss",
+                format_metric(selected_latest_row["packet_loss"], "%")
+            )
+            metric_cols[3].metric(
+                "Average Latency",
+                format_metric(avg_latency, "ms")
+            )
+            metric_cols[4].metric(
+                "Average Packet Loss",
+                format_metric(avg_packet_loss, "%")
+            )
+
+            
+            # ======================================
+            # COMBINED NETWORK PERFORMANCE CHART
+            # ======================================
+
+            st.markdown("**Network Performance Trend**")
+
+            chart_data = (
+                device_performance
+                .sort_values("checked_at")
+                .copy()
+            )
+
+            latency_data = chart_data.dropna(
+                subset=["latency_ms"]
+            )
+
+            packet_loss_data = chart_data.dropna(
+                subset=["packet_loss"]
+            )
+
+            if not chart_data.empty and (
+                not latency_data.empty
+                or not packet_loss_data.empty
+            ):
+                fig = go.Figure()
+
+                # Latency menggunakan batang
+                if not latency_data.empty:
+                    fig.add_trace(
+                        go.Bar(
+                            x=latency_data["checked_at"],
+                            y=latency_data["latency_ms"],
+                            name="Latency (ms)",
+                            yaxis="y",
+                            hovertemplate=(
+                                "Waktu: %{x}<br>"
+                                "Latency: %{y:.2f} ms"
+                                "<extra></extra>"
+                            )
+                        )
+                    )
+
+                # Packet Loss menggunakan garis
+                if not packet_loss_data.empty:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=packet_loss_data["checked_at"],
+                            y=packet_loss_data["packet_loss"],
+                            name="Packet Loss (%)",
+                            mode="lines+markers",
+                            yaxis="y2",
+                            connectgaps=False,
+                            hovertemplate=(
+                                "Waktu: %{x}<br>"
+                                "Packet Loss: %{y:.2f}%"
+                                "<extra></extra>"
+                            )
+                        )
+                    )
+
+                fig.update_layout(
+                    title="Latency & Packet Loss",
+                    xaxis=dict(
+                        title="Monitoring Time"
+                    ),
+                    yaxis=dict(
+                        title="Latency (ms)",
+                        side="left",
+                        rangemode="tozero"
+                    ),
+                    yaxis2=dict(
+                        title="Packet Loss (%)",
+                        overlaying="y",
+                        side="right",
+                        range=[0, 100],
+                        ticksuffix="%"
+                    ),
+                    hovermode="x unified",
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    ),
+                    barmode="group"
+                )
+
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True
+                )
+
+            else:
+                st.info(
+                    "Belum ada data latency dan packet loss "
+                    "untuk perangkat dan periode ini."
+                )
+
 
     # ======================================
     # MONITORING HISTORY
     # ======================================
 
     st.divider()
-    st.subheader("📋 Monitoring History")
+    st.subheader("Monitoring History")
 
     filter_col, limit_col = st.columns([2, 1])
 
@@ -365,6 +547,17 @@ else:
         .dt.strftime("%Y-%m-%d %H:%M:%S")
     )
 
+    filtered_history = filtered_history.rename(
+        columns={
+            "checked_at": "Checked At",
+            "device_name": "Device Name",
+            "ip_address": "IP Address",
+            "status": "Status",
+            "latency_ms": "Latency (ms)",
+            "packet_loss": "Packet Loss (%)"
+        }
+    )
+
     st.dataframe(
         filtered_history,
         use_container_width=True,
@@ -382,7 +575,7 @@ else:
 # ==========================================
 
 st.divider()
-st.header("📡 SNMP Device Monitoring")
+st.header("SNMP Device Monitoring")
 
 if snmp_history.empty:
     st.warning("No SNMP monitoring data available.")
@@ -450,7 +643,7 @@ else:
     # ======================================
     # RAM METRICS
     # ======================================
-    
+
 
     st.divider()
     st.subheader("Memory Utilization")
@@ -487,12 +680,12 @@ else:
             max(0.0, min(float(memory_percent) / 100, 1.0))
         )
 
-        
+
     # ======================================
     # RAM ALERTING
     # ======================================
 
-    st.subheader("🚨 RAM Alert Status")
+    st.subheader("RAM Alert Status")
 
     if pd.isna(memory_percent):
         st.error("CRITICAL: RAM metric tidak tersedia.")
@@ -541,7 +734,7 @@ else:
     # ======================================
 
     st.divider()
-    st.subheader("📈 RAM Usage History")
+    st.subheader("RAM Usage History")
 
     device_snmp_history = snmp_history[
         (snmp_history["device_name"] == selected_device)
@@ -579,7 +772,7 @@ else:
     # ======================================
 
     st.divider()
-    st.subheader("📋 SNMP Collection History")
+    st.subheader("SNMP Collection History")
 
     snmp_limit = st.selectbox(
         "Number of SNMP Records",

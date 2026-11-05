@@ -21,12 +21,14 @@ def initialize_database():
                 device_name TEXT NOT NULL,
                 ip_address TEXT NOT NULL,
                 status TEXT NOT NULL
-                    CHECK (status IN ('ONLINE', 'OFFLINE'))
+                    CHECK (status IN ('ONLINE', 'OFFLINE')),
+                latency_ms REAL,
+                packet_loss REAL
             )
         """)
 
 
-def save_result(checked_at, device_name, ip_address, status):
+def save_result(checked_at, device_name, ip_address, status, latency_ms, packet_loss):
     """Menyimpan satu hasil monitoring."""
     with get_connection() as connection:
         connection.execute("""
@@ -34,10 +36,12 @@ def save_result(checked_at, device_name, ip_address, status):
                 checked_at,
                 device_name,
                 ip_address,
-                status
+                status,
+                latency_ms,
+                packet_loss
             )
-            VALUES (?, ?, ?, ?)
-        """, (checked_at, device_name, ip_address, status))
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (checked_at, device_name, ip_address, status, latency_ms, packet_loss))
 
 
 def get_recent_history(limit=10):
