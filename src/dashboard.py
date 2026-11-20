@@ -83,6 +83,43 @@ def load_snmp_history():
         )
 
 
+@st.cache_data(ttl=10)
+def load_active_alerts():
+    """Mengambil seluruh incident yang masih aktif."""
+    if not DATABASE_FILE.exists():
+        return pd.DataFrame()
+
+    try:
+        with sqlite3.connect(DATABASE_FILE) as connection:
+            return pd.read_sql_query(
+                """
+                SELECT
+                    id,
+                    device_name,
+                    ip_address,
+                    alert_type,
+                    severity,
+                    message,
+                    first_seen,
+                    last_seen,
+                    status
+                FROM alert_history
+                WHERE status = 'ACTIVE'
+                ORDER BY
+                    CASE severity
+                        WHEN 'CRITICAL' THEN 1
+                        WHEN 'WARNING' THEN 2
+                        ELSE 3
+                    END,
+                    last_seen DESC
+                """,
+                connection
+            )
+
+    except sqlite3.OperationalError:
+        return pd.DataFrame()
+
+
 def load_inventory():
     """Membaca informasi perangkat dari inventory."""
     with open(INVENTORY_FILE, "r", encoding="utf-8") as file:
@@ -166,6 +203,7 @@ with col_refresh:
 
 history = load_history()
 snmp_history = load_snmp_history()
+active_alerts = load_active_alerts()
 
 history = convert_to_local_time(history)
 snmp_history = convert_to_local_time(snmp_history)
@@ -567,6 +605,99 @@ else:
     st.caption(
         f"Displaying {len(filtered_history)} records "
         f"from {len(history)} monitoring records."
+    )
+
+
+# ==========================================
+# ACTIVE ALERTS
+# ==========================================
+
+st.divider()
+st.header("Active Alerts")
+
+if active_alerts.empty:
+    st.success("Tidak ada incident aktif.")
+    st.caption("Semua incident saat ini sudah terselesaikan.")
+    
+else:
+    critical_count = int(
+        (active_alerts["severity"] == "CRITICAL").sum()
+    )
+
+    warning_count = int(
+        (active_alerts["severity"] == "WARNING").sum()
+    )
+
+    total_active = len(active_alerts)
+
+    alert_col1, alert_col2, alert_col3 = st.columns(3)
+
+    alert_col1.metric(
+        "Active Incidents",
+        total_active
+    )
+
+    alert_col2.metric(
+        "Critical Alerts",
+        critical_count
+    )
+
+    alert_col3.metric(
+        "Warning Alerts",
+        warning_count
+    )
+
+    st.subheader("Active Incident Details")
+
+    alert_table = active_alerts.copy()
+
+    # Konversi timestamp ke waktu Jakarta
+    for column in ["first_seen", "last_seen"]:
+        alert_table[column] = pd.to_datetime(
+            alert_table[column],
+            errors="coerce",
+            utc=True
+        ).dt.tz_convert("Asia/Jakarta")
+
+        alert_table[column] = (
+            alert_table[column]
+            .dt.strftime("%Y-%m-%d %H:%M:%S")
+        )
+
+    alert_table = alert_table.rename(
+        columns={
+            "id": "Alert ID",
+            "device_name": "Device Name",
+            "ip_address": "IP Address",
+            "alert_type": "Alert Type",
+            "severity": "Severity",
+            "message": "Message",
+            "first_seen": "First Seen",
+            "last_seen": "Last Seen",
+            "status": "Status"
+        }
+    )
+
+    def highlight_severity(value):
+        if value == "CRITICAL":
+            return "color: #DC2626; font-weight: bold"
+
+        if value == "WARNING":
+            return "color: #D97706; font-weight: bold"
+
+        return ""
+
+    st.dataframe(
+        alert_table.style.map(
+            highlight_severity,
+            subset=["Severity"]
+        ),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.caption(
+        f"Displaying {len(alert_table)} active incidents."
     )
 
 

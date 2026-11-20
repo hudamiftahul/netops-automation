@@ -20,12 +20,18 @@ from database import (
     initialize_snmp_table,
     initialize_scheduler_health,
     update_scheduler_health,
+    
 )
 
 #from connectivity_check import check_connectivity
 
 from connectivity_check import measure_connectivity
 from snmp_collector import load_devices, collect_device
+
+from alert_engine import (
+    initialize_alert_table,
+    evaluate_connectivity_alert,
+)
 
 
 # Project configuration
@@ -120,6 +126,65 @@ def run_ping_monitoring():
                     packet_loss
                 )
 
+                
+                try:
+                    alert_events = evaluate_connectivity_alert(
+                        checked_at=checked_at,
+                        device_name=name,
+                        ip_address=ip,
+                        status=status,
+                        latency_ms=latency_ms,
+                        packet_loss=packet_loss,
+                    )
+
+                    for event in alert_events:
+                        action = event["action"]
+                        alert_id = event["alert_id"]
+                        alert_type = event["alert_type"]
+                        severity = event["severity"]
+                        message = event["message"]
+
+                        if action == "CREATED":
+                            logger.warning(
+                                "ALERT CREATED | ID: %s | "
+                                "Type: %s | Severity: %s | "
+                                "Device: %s | IP: %s | Message: %s",
+                                alert_id,
+                                alert_type,
+                                severity,
+                                name,
+                                ip,
+                                message,
+                            )
+
+                        elif action == "RESOLVED":
+                            logger.info(
+                                "ALERT RESOLVED | ID: %s | "
+                                "Type: %s | Device: %s | IP: %s",
+                                alert_id,
+                                alert_type,
+                                name,
+                                ip,
+                            )
+
+                        elif action == "UPDATED":
+                            logger.debug(
+                                "ALERT UPDATED | ID: %s | "
+                                "Type: %s | Device: %s | IP: %s",
+                                alert_id,
+                                alert_type,
+                                name,
+                                ip,
+                            )
+
+                except Exception:
+                    logger.exception(
+                        "ALERT EVALUATION ERROR | Device: %s | IP: %s",
+                        name,
+                        ip,
+                    )
+
+
                 if status == "ONLINE":
                     online_count += 1
                     logger.info(
@@ -171,6 +236,7 @@ async def run_scheduler(auth_data):
     initialize_database()
     initialize_snmp_table()
     initialize_scheduler_health()
+    initialize_alert_table()
 
     logger.info("========================================")
     logger.info("NetOps Unified Scheduler started.")
